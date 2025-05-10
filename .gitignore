@@ -1,0 +1,63 @@
+# Python generated files
+__pycache__/
+*.pyc
+*.pyd
+.Python
+Lib/
+Include/
+bin
+sdist
+*.egg-info
+develop-eggs
+eggs/
+MANIFEST
+
+# Scrapy specific
+.scrapy/
+scrapy.log
+
+# Dependencies
+*.egg
+parts/
+wheels/
+pip-log.txt
+pip-delete-this.txt
+
+# Environment files
+.env
+.venv/
+venv/
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+dist/
+sdist/
+*.egg-info/
+.installed.cfg
+*.whl
+MANIFEST.in
+
+# Editors and IDEs
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+*.testproject
+.settings/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS or system files
+.DS_Store
+Thumbs.db
