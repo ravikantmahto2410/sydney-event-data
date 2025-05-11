@@ -17,7 +17,7 @@ function App() {
         console.log('Fetching events from:', `${API_URL}/api/events`);
         try {
             const response = await axios.get(`${API_URL}/api/events`, {
-                timeout: 10000, // Timeout after 10 seconds
+                timeout: 30000, // Timeout after 30 seconds
             });
             console.log('Fetched events:', response.data);
             setEvents(response.data || []); // Ensure events is always an array
