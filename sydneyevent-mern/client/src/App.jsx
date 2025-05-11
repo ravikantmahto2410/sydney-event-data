@@ -9,7 +9,7 @@ function App() {
     const [sortOrder, setSortOrder] = useState('asc');
 
     useEffect(() => {
-        axios.get('http://localhost:5000/api/events')
+        axios.get('https://sydney-event-data-backend.onrender.com')
             .then(response => {
                 setEvents(response.data);
             })
