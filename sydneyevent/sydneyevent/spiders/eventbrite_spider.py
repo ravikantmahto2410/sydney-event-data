@@ -16,16 +16,17 @@ class EventbriteSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super(EventbriteSpider, self).__init__(*args, **kwargs)
-        chrome_options = Options()
-        # chrome_options.add_argument('--headless')  # Uncomment for production
-        service = Service('D:/Ravikant/Btech/Coding 2/Louder Project/01_SYDNEY/chromedriver.exe')
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        try:
+            chrome_options = Options()
+            # chrome_options.add_argument('--headless')  # Uncomment for production
+            service = Service('D:/Ravikant/Btech/Coding 2/Louder Project/01_SYDNEY/chromedriver.exe')
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize WebDriver: {e}")
+            raise
 
     def parse(self, response):
-        page = response.meta.get('page', 1)
-        max_pages = 5
-
-        self.logger.info(f"Parsing page {page}: {response.url}")
+        # Use Selenium to load the page
         self.driver.get(response.url)
         try:
             self.logger.info("Waiting for event cards to load...")
@@ -40,66 +41,72 @@ class EventbriteSpider(scrapy.Spider):
         # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         events = soup.select('div.small-card-mobile.eds-l-pad-all-2')
-        self.logger.info(f"Found {len(events)} event cards on this page")
-        if not events:
-            self.logger.info("No events found on this page.")
-            self.driver.quit()
-            return
+        self.logger.info(f"Found {len(events)} event cards")  # pylint: disable=undefined-variable
 
+        # Deduplicate events based on title and ticket URL
+        seen_keys = set()
+        unique_events = []
         for event in events:
+            title_tag = event.select_one('h3.event-card__title-text') or event.select_one('h3.eds-text-h3') or event.select_one('h3')
+            title = title_tag.get_text(strip=True) if title_tag else ''
+            ticket_url = event.select_one('a:has(h3)')['href'] if event.select_one('a:has(h3)') else ''
+            key = (title, ticket_url)
+            if key and key not in seen_keys:
+                seen_keys.add(key)
+                unique_events.append(event)
+
+        self.logger.info(f"After deduplication, found {len(unique_events)} unique event cards")  # pylint: disable=undefined-variable
+
+        # Extract fields from each event card
+        for event in unique_events:
             item = EventItem()
             try:
                 title_tag = event.select_one('h3.event-card__title-text') or event.select_one('h3.eds-text-h3') or event.select_one('h3')
                 item['title'] = title_tag.get_text(strip=True) if title_tag else ''
-                self.logger.info(f"Extracted title: {item['title']}")
+                self.logger.info(f"Extracted title: {item['title']}")  # pylint: disable=undefined-variable
             except Exception as e:
-                self.logger.warning(f"Title not found: {e}")
+                self.logger.warning(f"Title not found: {e}")  # pylint: disable=undefined-variable
                 item['title'] = ''
 
+            item['date'] = ''
+            item['venue'] = ''
+            item['description'] = ''
             try:
                 p_elements = event.select('p.Typography_root__487rx')
+                self.logger.debug(f"Found {len(p_elements)} <p> tags: {[p.get_text(strip=True) for p in p_elements]}")  # pylint: disable=undefined-variable
 
-                item['date'] = p_elements[0].get_text(strip=True) if len(p_elements) > 0 else ''
-                self.logger.info(f"Extracted date: {item['date']}")
+                # Promotional tags to exclude from venue
+                promotional_tags = {'selling quickly', 'nearly full', 'sales end soon', 'promoted', 'free', 'just added'}
 
-                item['venue'] = p_elements[1].get_text(strip=True) if len(p_elements) > 1 else ''
-                self.logger.info(f"Extracted venue: {item['venue']}")
+                # Assign fields based on content
+                for p in p_elements:
+                    text = p.get_text(strip=True).lower()
+                    # Check if the text looks like a date
+                    if any(keyword in text for keyword in ['am', 'pm', 'today', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) and any(char.isdigit() for char in text):
+                        item['date'] = p.get_text(strip=True)
+                    # Check if the text looks like a description
+                    elif 'ticket price' in text:
+                        item['description'] = p.get_text(strip=True)
+                    # Check if the text looks like a venue
+                    elif text not in promotional_tags:
+                        item['venue'] = p.get_text(strip=True)
 
-                item['description'] = p_elements[3].get_text(strip=True) if len(p_elements) > 3 else ''
-                self.logger.info(f"Extracted description (organizer): {item['description']}")
+                self.logger.info(f"Extracted date: {item['date']}")  # pylint: disable=undefined-variable
+                self.logger.info(f"Extracted venue: {item['venue']}")  # pylint: disable=undefined-variable
+                self.logger.info(f"Extracted description (organizer): {item['description']}")  # pylint: disable=undefined-variable
             except Exception as e:
-                self.logger.warning(f"Date, Venue, or Description not found: {e}")
-                item['date'] = ''
-                item['venue'] = ''
-                item['description'] = ''
+                self.logger.warning(f"Failed to extract Date, Venue, or Description: {str(e)}")  # pylint: disable=undefined-variable
 
             try:
                 item['ticket_url'] = event.select_one('a:has(h3)')['href'] if event.select_one('a:has(h3)') else ''
-                self.logger.info(f"Extracted ticket_url: {item['ticket_url']}")
+                self.logger.info(f"Extracted ticket_url: {item['ticket_url']}")  # pylint: disable=undefined-variable
             except Exception as e:
-                self.logger.warning(f"Ticket URL not found: {e}")
+                self.logger.warning(f"Ticket URL not found: {e}")  # pylint: disable=undefined-variable
                 item['ticket_url'] = ''
 
-            self.logger.info(f"Scraped item: {item}")
+            self.logger.info(f"Scraped item: {item}")  # pylint: disable=undefined-variable
             yield item
 
-        if page >= max_pages:
-            self.logger.info(f"Reached maximum page limit of {max_pages}. Stopping pagination.")
-            self.driver.quit()
-            return
-
-        self.logger.info("Looking for 'Explore More Events' link...")
-        try:
-            explore_more_link = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, '//a[contains(text(), "Explore More Events")]'))
-            )
-            next_url = explore_more_link.get_attribute('href')
-            if next_url and next_url != response.url:
-                self.logger.info(f"Following next page: {next_url}")
-                yield scrapy.Request(next_url, callback=self.parse, meta={'page': page + 1})
-            else:
-                self.logger.info("No valid next page found. Stopping pagination.")
-                self.driver.quit()
-        except TimeoutException:
-            self.logger.info("No 'Explore More Events' link found. Stopping pagination.")
-            self.driver.quit()
+    def closed(self, reason):
+        self.driver.quit()
+        self.logger.info("WebDriver closed")  # pylint: disable=undefined-variable

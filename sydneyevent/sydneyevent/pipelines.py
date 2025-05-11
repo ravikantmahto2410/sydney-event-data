@@ -10,7 +10,56 @@ class MongoDBPipeline:
         self.mongo_db = settings.get('MONGODB_DB')
         self.collection_name = settings.get('MONGODB_COLLECTION')
 
-        # Debug: Print the loaded settings
+        # Debug: Print the loaded settingsimport pymongo
+from itemadapter import ItemAdapter
+from scrapy.exceptions import DropItem
+from scrapy.utils.project import get_project_settings
+
+class MongoDBPipeline:
+    def __init__(self):
+        print("MongoDBPipeline: Initializing...")
+        settings = get_project_settings()
+        self.mongo_uri = settings.get('MONGODB_URI')
+        self.mongo_db = settings.get('MONGODB_DB')
+        self.collection_name = settings.get('MONGODB_COLLECTION')
+
+        print(f"MONGODB_URI: {self.mongo_uri}")
+        print(f"MONGODB_DB: {self.mongo_db}")
+        print(f"MONGODB_COLLECTION: {self.collection_name}")
+
+        if not self.mongo_uri or not self.mongo_db or not self.collection_name:
+            raise ValueError("Missing MongoDB settings: MONGODB_URI, MONGODB_DB, or MONGODB_COLLECTION not set")
+
+        self.client = None
+
+    def open_spider(self, spider):
+        print("MongoDBPipeline: Opening spider...")
+        try:
+            self.client = pymongo.MongoClient(self.mongo_uri)
+            self.db = self.client[self.mongo_db]
+            self.collection = self.db[self.collection_name]
+            spider.logger.info("Successfully connected to MongoDB")
+        except Exception as e:
+            spider.logger.error(f"Failed to connect to MongoDB: {e}")
+            raise ValueError(f"Failed to connect to MongoDB: {e}")
+
+    def close_spider(self, spider):
+        print("MongoDBPipeline: Closing spider...")
+        if self.client:
+            self.client.close()
+            spider.logger.info("MongoDB connection closed")
+
+    def process_item(self, item, spider):
+        print("MongoDBPipeline: Processing item...")
+        try:
+            item_dict = ItemAdapter(item).asdict()
+            spider.logger.debug(f"Item to insert: {item_dict}")
+            result = self.collection.insert_one(item_dict)
+            spider.logger.info(f"Inserted item into MongoDB: {item['title']} (ID: {result.inserted_id})")
+            return item
+        except Exception as e:
+            spider.logger.error(f"Failed to insert item into MongoDB: {e}")
+            raise DropItem(f"Failed to insert item: {e}")
         print(f"MONGODB_URI: {self.mongo_uri}")
         print(f"MONGODB_DB: {self.mongo_db}")
         print(f"MONGODB_COLLECTION: {self.collection_name}")
