@@ -7,7 +7,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
-from ..items import EventItem
+from datetime import datetime, timedelta
+from ..items import EventItem  # Ensure this matches your items.py
 
 class EventbriteSpider(scrapy.Spider):
     name = 'eventbrite'
@@ -21,6 +22,7 @@ class EventbriteSpider(scrapy.Spider):
             # chrome_options.add_argument('--headless')  # Uncomment for production
             service = Service('D:/Ravikant/Btech/Coding 2/Louder Project/01_SYDNEY/chromedriver.exe')
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            self.logger.info("WebDriver initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize WebDriver: {e}")
             raise
@@ -41,7 +43,7 @@ class EventbriteSpider(scrapy.Spider):
         # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         events = soup.select('div.small-card-mobile.eds-l-pad-all-2')
-        self.logger.info(f"Found {len(events)} event cards")  # pylint: disable=undefined-variable
+        self.logger.info(f"Found {len(events)} event cards")
 
         # Deduplicate events based on title and ticket URL
         seen_keys = set()
@@ -55,7 +57,7 @@ class EventbriteSpider(scrapy.Spider):
                 seen_keys.add(key)
                 unique_events.append(event)
 
-        self.logger.info(f"After deduplication, found {len(unique_events)} unique event cards")  # pylint: disable=undefined-variable
+        self.logger.info(f"After deduplication, found {len(unique_events)} unique event cards")
 
         # Extract fields from each event card
         for event in unique_events:
@@ -63,9 +65,9 @@ class EventbriteSpider(scrapy.Spider):
             try:
                 title_tag = event.select_one('h3.event-card__title-text') or event.select_one('h3.eds-text-h3') or event.select_one('h3')
                 item['title'] = title_tag.get_text(strip=True) if title_tag else ''
-                self.logger.info(f"Extracted title: {item['title']}")  # pylint: disable=undefined-variable
+                self.logger.info(f"Extracted title: {item['title']}")
             except Exception as e:
-                self.logger.warning(f"Title not found: {e}")  # pylint: disable=undefined-variable
+                self.logger.warning(f"Title not found: {e}")
                 item['title'] = ''
 
             item['date'] = ''
@@ -73,7 +75,7 @@ class EventbriteSpider(scrapy.Spider):
             item['description'] = ''
             try:
                 p_elements = event.select('p.Typography_root__487rx')
-                self.logger.debug(f"Found {len(p_elements)} <p> tags: {[p.get_text(strip=True) for p in p_elements]}")  # pylint: disable=undefined-variable
+                self.logger.debug(f"Found {len(p_elements)} <p> tags: {[p.get_text(strip=True) for p in p_elements]}")
 
                 # Promotional tags to exclude from venue
                 promotional_tags = {'selling quickly', 'nearly full', 'sales end soon', 'promoted', 'free', 'just added'}
@@ -91,22 +93,45 @@ class EventbriteSpider(scrapy.Spider):
                     elif text not in promotional_tags:
                         item['venue'] = p.get_text(strip=True)
 
-                self.logger.info(f"Extracted date: {item['date']}")  # pylint: disable=undefined-variable
-                self.logger.info(f"Extracted venue: {item['venue']}")  # pylint: disable=undefined-variable
-                self.logger.info(f"Extracted description (organizer): {item['description']}")  # pylint: disable=undefined-variable
+                # Convert relative dates to absolute dates
+                current_date = datetime.now()
+                raw_date = item['date']
+                if "Today" in raw_date:
+                    time_part = raw_date.replace("Today at ", "").strip()
+                    parsed_time = datetime.strptime(time_part, "%I:%M %p")  # e.g., "6:00 PM"
+                    item['date'] = current_date.replace(
+                        hour=parsed_time.hour,
+                        minute=parsed_time.minute,
+                        second=0,
+                        microsecond=0
+                    ).strftime("%Y-%m-%d %H:%M:%S")  # e.g., "2025-05-11 18:00:00"
+                elif "yesterday" in raw_date.lower():
+                    time_part = raw_date.replace("yesterday at ", "").strip()
+                    parsed_time = datetime.strptime(time_part, "%I:%M %p")
+                    yesterday = current_date - timedelta(days=1)
+                    item['date'] = yesterday.replace(
+                        hour=parsed_time.hour,
+                        minute=parsed_time.minute,
+                        second=0,
+                        microsecond=0
+                    ).strftime("%Y-%m-%d %H:%M:%S")  # e.g., "2025-05-10 10:00:00"
+
+                self.logger.info(f"Extracted date: {item['date']}")
+                self.logger.info(f"Extracted venue: {item['venue']}")
+                self.logger.info(f"Extracted description: {item['description']}")
             except Exception as e:
-                self.logger.warning(f"Failed to extract Date, Venue, or Description: {str(e)}")  # pylint: disable=undefined-variable
+                self.logger.warning(f"Failed to extract Date, Venue, or Description: {str(e)}")
 
             try:
                 item['ticket_url'] = event.select_one('a:has(h3)')['href'] if event.select_one('a:has(h3)') else ''
-                self.logger.info(f"Extracted ticket_url: {item['ticket_url']}")  # pylint: disable=undefined-variable
+                self.logger.info(f"Extracted ticket_url: {item['ticket_url']}")
             except Exception as e:
-                self.logger.warning(f"Ticket URL not found: {e}")  # pylint: disable=undefined-variable
+                self.logger.warning(f"Ticket URL not found: {e}")
                 item['ticket_url'] = ''
 
-            self.logger.info(f"Scraped item: {item}")  # pylint: disable=undefined-variable
+            self.logger.info(f"Scraped item: {item}")
             yield item
 
     def closed(self, reason):
         self.driver.quit()
-        self.logger.info("WebDriver closed")  # pylint: disable=undefined-variable
+        self.logger.info("WebDriver closed")
