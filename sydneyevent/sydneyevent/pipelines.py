@@ -1,28 +1,37 @@
-from pymongo import MongoClient
-from pymongo.errors import OperationFailure
-from dotenv import load_dotenv
-import os
+import pymongo
+from itemadapter import ItemAdapter
+from scrapy.exceptions import DropItem
+from scrapy.utils.project import get_project_settings
 
-load_dotenv()
-
-class EventScraperPipeline:
+class MongoDBPipeline:
     def __init__(self):
-        mongo_uri = os.getenv('MONGODB_URI')
-        if not mongo_uri:
-            raise ValueError("MONGODB_URI not found in .env file")
-        print(f"Connecting to MongoDB with URI: {mongo_uri}")
-        try:
-            self.client = MongoClient(mongo_uri)
-            # Test the connection
-            self.client.admin.command('ping')
-        except OperationFailure as e:
-            raise ValueError(f"Failed to connect to MongoDB Atlas: {str(e)}")
-        self.db = self.client['sydney_events']
-        self.collection = self.db['events']
+        settings = get_project_settings()
+        self.mongo_uri = settings.get('MONGODB_URI')
+        self.mongo_db = settings.get('MONGODB_DB')
+        self.collection_name = settings.get('MONGODB_COLLECTION')
 
-    def process_item(self, item, spider):
-        self.collection.insert_one(dict(item))
-        return item
+        # Debug: Print the loaded settings
+        print(f"MONGODB_URI: {self.mongo_uri}")
+        print(f"MONGODB_DB: {self.mongo_db}")
+        print(f"MONGODB_COLLECTION: {self.collection_name}")
+
+        # Check if settings are missing
+        if not self.mongo_uri or not self.mongo_db or not self.collection_name:
+            raise ValueError("Missing MongoDB settings: MONGODB_URI, MONGODB_DB, or MONGODB_COLLECTION not set")
+
+    def open_spider(self, spider):
+        self.client = pymongo.MongoClient(self.mongo_uri)
+        self.db = self.client[self.mongo_db]
+        self.collection = self.db[self.collection_name]
 
     def close_spider(self, spider):
         self.client.close()
+
+    def process_item(self, item, spider):
+        try:
+            self.collection.insert_one(ItemAdapter(item).asdict())
+            spider.logger.info(f"Inserted item into MongoDB: {item['title']}")
+            return item
+        except Exception as e:
+            spider.logger.error(f"Failed to insert item into MongoDB: {e}")
+            raise DropItem(f"Failed to insert item: {e}")
