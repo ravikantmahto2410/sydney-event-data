@@ -22,13 +22,18 @@ parts/
 wheels/
 pip-log.txt
 pip-delete-this.txt
+node_modules
 
 # Environment files
 .env
 .venv/
 venv/
 env/
-
+node_modules/
+.env
+*.log
+dist/
+coverage/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -43,7 +48,7 @@ sdist/
 .installed.cfg
 *.whl
 MANIFEST.in
-
+build/
 # Editors and IDEs
 .idea/
 .project
@@ -61,3 +66,8 @@ MANIFEST.in
 # OS or system files
 .DS_Store
 Thumbs.db
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
