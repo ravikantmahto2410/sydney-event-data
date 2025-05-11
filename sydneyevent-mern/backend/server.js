@@ -10,7 +10,8 @@ console.log('MONGO_URI in server.js:', process.env.MONGO_URI)
 const app = express();
 
 // Middleware
-app.use(cors());
+const cors = require('cors');
+app.use(cors({ origin: 'https://sydney-event-data-frontend.onrender.com' }));
 app.use(express.json());
 
 // Connect to MongoDB
