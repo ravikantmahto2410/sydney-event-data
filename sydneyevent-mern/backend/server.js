@@ -5,22 +5,36 @@ import dotenv from 'dotenv';
 
 // Load environment variables from .env
 dotenv.config();
-console.log('MONGO_URI in server.js:', process.env.MONGO_URI)
+console.log('MONGO_URI in server.js:', process.env.MONGO_URI);
 
 const app = express();
 
 // Middleware
-const cors = require('cors');
-app.use(cors({ origin: 'https://sydney-event-data-frontend.onrender.com' }));
+const allowedOrigins = [
+    'http://localhost:5173', // Frontend local URL (Vite default port)
+    'https://sydney-event-data-frontend.onrender.com', // Frontend production URL
+];
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+}));
 app.use(express.json());
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
-        console.log('Connected to MongoDB')
+        console.log('Connected to MongoDB');
         console.log('Database Name:', mongoose.connection.db.databaseName);
     })
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        process.exit(1); // Exit if MongoDB connection fails
+    });
 
 // Define Event Schema
 const eventSchema = new mongoose.Schema({
@@ -41,17 +55,19 @@ app.get('/', (req, res) => {
 // API Route to Get Events
 app.get('/api/events', async (req, res) => {
     try {
-        const events = await Event.find().sort({ date: 1 }); // Sort by date
+        const events = await Event.find().sort({ date: 1 });
+        console.log(`Returning ${events.length} events`); // Debug log
         res.json(events);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        console.error('Error fetching events:', err);
+        res.status(500).json({ message: 'Error fetching events', error: err.message });
     }
 });
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Something went wrong!' });
+    console.error('Global error:', err.stack);
+    res.status(500).json({ message: 'Something went wrong!', error: err.message });
 });
 
 // Start the Server
