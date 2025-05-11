@@ -8,7 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-from ..items import EventItem  # Ensure this matches your items.py
+from ..items import EventItem
 
 class EventbriteSpider(scrapy.Spider):
     name = 'eventbrite'
@@ -28,7 +28,6 @@ class EventbriteSpider(scrapy.Spider):
             raise
 
     def parse(self, response):
-        # Use Selenium to load the page
         self.driver.get(response.url)
         try:
             self.logger.info("Waiting for event cards to load...")
@@ -40,12 +39,10 @@ class EventbriteSpider(scrapy.Spider):
             self.driver.quit()
             return
 
-        # Parse the page with BeautifulSoup
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         events = soup.select('div.small-card-mobile.eds-l-pad-all-2')
         self.logger.info(f"Found {len(events)} event cards")
 
-        # Deduplicate events based on title and ticket URL
         seen_keys = set()
         unique_events = []
         for event in events:
@@ -59,7 +56,6 @@ class EventbriteSpider(scrapy.Spider):
 
         self.logger.info(f"After deduplication, found {len(unique_events)} unique event cards")
 
-        # Extract fields from each event card
         for event in unique_events:
             item = EventItem()
             try:
@@ -77,44 +73,49 @@ class EventbriteSpider(scrapy.Spider):
                 p_elements = event.select('p.Typography_root__487rx')
                 self.logger.debug(f"Found {len(p_elements)} <p> tags: {[p.get_text(strip=True) for p in p_elements]}")
 
-                # Promotional tags to exclude from venue
                 promotional_tags = {'selling quickly', 'nearly full', 'sales end soon', 'promoted', 'free', 'just added'}
 
-                # Assign fields based on content
+                current_date = datetime.now()
                 for p in p_elements:
                     text = p.get_text(strip=True).lower()
-                    # Check if the text looks like a date
                     if any(keyword in text for keyword in ['am', 'pm', 'today', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) and any(char.isdigit() for char in text):
-                        item['date'] = p.get_text(strip=True)
-                    # Check if the text looks like a description
+                        raw_date = p.get_text(strip=True)
+                        try:
+                            if "today" in text:
+                                time_part = raw_date.replace("Today at ", "").strip()
+                                parsed_time = datetime.strptime(time_part, "%I:%M %p")
+                                item['date'] = current_date.replace(
+                                    hour=parsed_time.hour,
+                                    minute=parsed_time.minute,
+                                    second=0,
+                                    microsecond=0
+                                ).strftime("%Y-%m-%d %H:%M:%S")
+                            elif "yesterday" in text:
+                                time_part = raw_date.replace("Yesterday at ", "").strip()
+                                parsed_time = datetime.strptime(time_part, "%I:%M %p")
+                                yesterday = current_date - timedelta(days=1)
+                                item['date'] = yesterday.replace(
+                                    hour=parsed_time.hour,
+                                    minute=parsed_time.minute,
+                                    second=0,
+                                    microsecond=0
+                                ).strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                # Try parsing as an absolute date (e.g., "Mon, May 15, 2025 at 6:00 PM")
+                                try:
+                                    parsed_date = datetime.strptime(raw_date, "%a, %b %d, %Y at %I:%M %p")
+                                    item['date'] = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
+                                except ValueError:
+                                    # Try another common format (e.g., "2025-05-15 18:00:00")
+                                    parsed_date = datetime.strptime(raw_date, "%Y-%m-%d %H:%M:%S")
+                                    item['date'] = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
+                        except ValueError as e:
+                            self.logger.warning(f"Failed to parse date '{raw_date}': {e}")
+                            item['date'] = current_date.strftime("%Y-%m-%d %H:%M:%S")  # Fallback to current date
                     elif 'ticket price' in text:
                         item['description'] = p.get_text(strip=True)
-                    # Check if the text looks like a venue
                     elif text not in promotional_tags:
                         item['venue'] = p.get_text(strip=True)
-
-                # Convert relative dates to absolute dates
-                current_date = datetime.now()
-                raw_date = item['date']
-                if "Today" in raw_date:
-                    time_part = raw_date.replace("Today at ", "").strip()
-                    parsed_time = datetime.strptime(time_part, "%I:%M %p")  # e.g., "6:00 PM"
-                    item['date'] = current_date.replace(
-                        hour=parsed_time.hour,
-                        minute=parsed_time.minute,
-                        second=0,
-                        microsecond=0
-                    ).strftime("%Y-%m-%d %H:%M:%S")  # e.g., "2025-05-11 18:00:00"
-                elif "yesterday" in raw_date.lower():
-                    time_part = raw_date.replace("yesterday at ", "").strip()
-                    parsed_time = datetime.strptime(time_part, "%I:%M %p")
-                    yesterday = current_date - timedelta(days=1)
-                    item['date'] = yesterday.replace(
-                        hour=parsed_time.hour,
-                        minute=parsed_time.minute,
-                        second=0,
-                        microsecond=0
-                    ).strftime("%Y-%m-%d %H:%M:%S")  # e.g., "2025-05-10 10:00:00"
 
                 self.logger.info(f"Extracted date: {item['date']}")
                 self.logger.info(f"Extracted venue: {item['venue']}")
