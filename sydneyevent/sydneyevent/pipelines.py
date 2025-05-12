@@ -1,10 +1,21 @@
 import pymongo
+import os
 
 class MongoPipeline:
     def __init__(self):
-        self.client = pymongo.MongoClient('mongodb+srv://sydneyevents:sydneyevents2410@cluster0.ilfuf.mongodb.net/sydneyevents?retryWrites=true&w=majority')
-        self.db = self.client['sydneyevents']
-        self.collection = self.db['events']
+        # Load MongoDB settings from environment variables (via Scrapy settings)
+        mongodb_uri = os.getenv('MONGODB_URI')
+        mongodb_db = os.getenv('MONGODB_DB')
+        mongodb_collection = os.getenv('MONGODB_COLLECTION')
+
+        # Validate that the settings are available
+        if not mongodb_uri or not mongodb_db or not mongodb_collection:
+            raise ValueError("MongoDB settings (MONGODB_URI, MONGODB_DB, MONGODB_COLLECTION) are not set in environment variables")
+
+        # Initialize MongoDB connection
+        self.client = pymongo.MongoClient(mongodb_uri)
+        self.db = self.client[mongodb_db]
+        self.collection = self.db[mongodb_collection]
         self.collection.delete_many({})
 
     def process_item(self, item, spider):
