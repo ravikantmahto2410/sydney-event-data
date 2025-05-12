@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { format, parse } from 'date-fns';
 
 function App() {
     const [events, setEvents] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [venueFilter, setVenueFilter] = useState('');
-    const [sortOrder, setSortOrder] = useState('asc');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -41,28 +39,10 @@ function App() {
             const matchesVenue = venue.toLowerCase().includes(venueFilter.toLowerCase());
             console.log(`Event: ${title}, Matches Title: ${matchesTitle}, Matches Venue: ${matchesVenue}`);
             return matchesTitle && matchesVenue;
-        })
-        .sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
         });
 
     console.log('Events state:', events);
     console.log('Filtered events:', filteredEvents);
-
-    const formatDate = (dateString) => {
-        try {
-            const parsedDate = parse(dateString, 'yyyy-MM-dd HH:mm:ss', new Date());
-            if (isNaN(parsedDate.getTime())) {
-                return 'Invalid Date';
-            }
-            return format(parsedDate, 'PPP p');
-        } catch (error) {
-            console.error('Error formatting date:', dateString, error);
-            return 'Invalid Date';
-        }
-    };
 
     return (
         <div className="min-h-screen bg-gray-100 p-4">
@@ -83,12 +63,6 @@ function App() {
                     onChange={(e) => setVenueFilter(e.target.value)}
                     className="border p-2 rounded-lg"
                 />
-                <button
-                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-                >
-                    Sort by Date ({sortOrder === 'asc' ? 'Ascending' : 'Descending'})
-                </button>
                 <button
                     onClick={() => {
                         setSearchTerm('');
@@ -119,7 +93,7 @@ function App() {
                     {filteredEvents.map(event => (
                         <div key={event._id} className="bg-white p-4 rounded-lg shadow-lg fade-in-up">
                             <h2 className="text-xl font-semibold">{event.title || 'No Title'}</h2>
-                            <p className="text-gray-600">Date: {formatDate(event.date)}</p>
+                            <p className="text-gray-600">Date: {event.date || 'TBD'}</p>
                             <p className="text-gray-600">Venue: {event.venue || 'No Venue'}</p>
                             <p className="text-gray-600">{event.description || 'No Description'}</p>
                             <a

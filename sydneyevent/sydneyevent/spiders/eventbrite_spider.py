@@ -7,7 +7,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+import re
 from ..items import EventItem
 
 class EventbriteSpider(scrapy.Spider):
@@ -58,6 +58,7 @@ class EventbriteSpider(scrapy.Spider):
 
         for event in unique_events:
             item = EventItem()
+            # Extract title
             try:
                 title_tag = event.select_one('h3.event-card__title-text') or event.select_one('h3.eds-text-h3') or event.select_one('h3')
                 item['title'] = title_tag.get_text(strip=True) if title_tag else ''
@@ -66,6 +67,7 @@ class EventbriteSpider(scrapy.Spider):
                 self.logger.warning(f"Title not found: {e}")
                 item['title'] = ''
 
+            # Initialize item fields
             item['date'] = ''
             item['venue'] = ''
             item['description'] = ''
@@ -75,47 +77,30 @@ class EventbriteSpider(scrapy.Spider):
 
                 promotional_tags = {'selling quickly', 'nearly full', 'sales end soon', 'promoted', 'free', 'just added'}
 
-                current_date = datetime.now()
+                # Process all <p> tags without breaking
                 for p in p_elements:
                     text = p.get_text(strip=True).lower()
-                    if any(keyword in text for keyword in ['am', 'pm', 'today', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) and any(char.isdigit() for char in text):
+                    # Look for date patterns
+                    if not item['date'] and any(keyword in text for keyword in ['am', 'pm', 'today', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']):
                         raw_date = p.get_text(strip=True)
-                        try:
-                            if "today" in text:
-                                time_part = raw_date.replace("Today at ", "").strip()
-                                parsed_time = datetime.strptime(time_part, "%I:%M %p")
-                                item['date'] = current_date.replace(
-                                    hour=parsed_time.hour,
-                                    minute=parsed_time.minute,
-                                    second=0,
-                                    microsecond=0
-                                ).strftime("%Y-%m-%d %H:%M:%S")
-                            elif "yesterday" in text:
-                                time_part = raw_date.replace("Yesterday at ", "").strip()
-                                parsed_time = datetime.strptime(time_part, "%I:%M %p")
-                                yesterday = current_date - timedelta(days=1)
-                                item['date'] = yesterday.replace(
-                                    hour=parsed_time.hour,
-                                    minute=parsed_time.minute,
-                                    second=0,
-                                    microsecond=0
-                                ).strftime("%Y-%m-%d %H:%M:%S")
-                            else:
-                                # Try parsing as an absolute date (e.g., "Mon, May 15, 2025 at 6:00 PM")
-                                try:
-                                    parsed_date = datetime.strptime(raw_date, "%a, %b %d, %Y at %I:%M %p")
-                                    item['date'] = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
-                                except ValueError:
-                                    # Try another common format (e.g., "2025-05-15 18:00:00")
-                                    parsed_date = datetime.strptime(raw_date, "%Y-%m-%d %H:%M:%S")
-                                    item['date'] = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
-                        except ValueError as e:
-                            self.logger.warning(f"Failed to parse date '{raw_date}': {e}")
-                            item['date'] = current_date.strftime("%Y-%m-%d %H:%M:%S")  # Fallback to current date
+                        self.logger.info(f"Scraped raw date for {item['title']}: {raw_date}")
+                        item['date'] = raw_date
+                    # Look for description
                     elif 'ticket price' in text:
                         item['description'] = p.get_text(strip=True)
-                    elif text not in promotional_tags:
+                    # Look for venue, only set if not already set
+                    elif text not in promotional_tags and not item['venue']:
                         item['venue'] = p.get_text(strip=True)
+
+                # If no date was found in <p> tags, try extracting from the title
+                if not item['date']:
+                    title_lower = item['title'].lower()
+                    # Look for patterns like "fri 16 may", "sun 18th may", etc.
+                    date_pattern = r'(mon|tue|wed|thu|fri|sat|sun)\s+\d{1,2}(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
+                    match = re.search(date_pattern, title_lower)
+                    if match:
+                        item['date'] = match.group(0).title()  # Capitalize the extracted date (e.g., "Sun 18th May")
+                        self.logger.info(f"Extracted date from title for {item['title']}: {item['date']}")
 
                 self.logger.info(f"Extracted date: {item['date']}")
                 self.logger.info(f"Extracted venue: {item['venue']}")
@@ -123,6 +108,7 @@ class EventbriteSpider(scrapy.Spider):
             except Exception as e:
                 self.logger.warning(f"Failed to extract Date, Venue, or Description: {str(e)}")
 
+            # Extract ticket URL
             try:
                 item['ticket_url'] = event.select_one('a:has(h3)')['href'] if event.select_one('a:has(h3)') else ''
                 self.logger.info(f"Extracted ticket_url: {item['ticket_url']}")

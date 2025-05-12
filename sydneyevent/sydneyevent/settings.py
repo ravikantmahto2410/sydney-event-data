@@ -17,7 +17,7 @@ ROBOTSTXT_OBEY = True
 DOWNLOAD_DELAY = 2
 
 ITEM_PIPELINES = {
-    'sydneyevent.pipelines.MongoDBPipeline': 300,
+    'sydneyevent.pipelines.MongoPipeline': 300,
 }
 
 # MongoDB settings
